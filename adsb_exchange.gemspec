@@ -34,8 +34,11 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency "rspec", "~> 3.0"
   spec.add_development_dependency "pry"
   spec.add_development_dependency "reel"
-  spec.add_dependency "yajl-ruby"
   spec.add_dependency 'http'
   spec.add_dependency "msgpack"
   spec.add_dependency 'celluloid-zmq'
+  spec.add_dependency 'oj'
+  spec.add_dependency 'redis'
+  spec.add_dependency 'sequel'
+  spec.add_dependency 'sqlite3'
 end

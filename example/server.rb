@@ -57,6 +57,7 @@ class AdsbClient
     while true
       msg = @sub.read
       @socket << MessagePack.unpack(msg).to_json unless msg.empty?
+      #@socket << msg
     end
   rescue Reel::SocketError
     puts "ADSB client disconnected"
@@ -64,12 +65,10 @@ class AdsbClient
   end
 end
 AdsbServer.supervise as: :adsb_server
-#AdsbExchange::Live.supervise as: :adsb_source
 
 key = File.read(File.join(File.dirname(__FILE__), 'test.key'))
 cert = File.read(File.join(File.dirname(__FILE__), 'test.crt'))
 Reel::Server::HTTPS.run("0.0.0.0", 3000, cert: cert, key: key) do |connection|
-  puts "Started AdsbExchange::Live"
   connection.each_request do |request|
     if request.websocket?
       AdsbClient.new(request.websocket)

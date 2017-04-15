@@ -1,9 +1,14 @@
-require 'yajl'
 require 'msgpack'
 require 'celluloid/current'
 require 'celluloid/io'
 require 'celluloid/zmq'
 Celluloid::ZMQ.init
+
+class BigDecimal
+  def to_msgpack packer
+    packer.write(to_f)
+  end
+end
 module AdsbExchange
   class Live
     include Celluloid::IO
@@ -22,29 +27,23 @@ module AdsbExchange
       @running = false
       @stream.close if @stream
       @publish.close if @publish
-      @parser = nil
     end
     def run
       return if @running
       @running = true
-      @parser = Yajl::Parser.new
-      @parser.on_parse_complete = method(:on_data)
       @stream = TCPSocket.new(@host, @port)
-      @publish =Socket::Pub.new
+      @publish = Socket::Pub.new
       @publish.bind(@endpoint)
 
-      while true 
-        @parser << @stream.recv(1024)
+      Parser.parse(@stream) do |msg|
+        now = Time.now.to_i*1000
+        selected = msg['acList'].select do |update|
+          update['PosTime'] = now
+          update.length > 1
+        end
+        puts selected.count
+        @publish << selected.to_msgpack
       end
-    end
-  private
-    def on_data msg
-      now = Time.now.to_i*1000
-      selected = msg['acList'].select do |update|
-        update['PosTime'] = now
-        update.length > 1
-      end
-      @publish << selected.to_msgpack
     end
   end
 end
