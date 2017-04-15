@@ -7,6 +7,8 @@
 /pkg/
 /spec/reports/
 /tmp/
+/example/test.crt
+/example/test.key
 
 # rspec failure tracking
 .rspec_status

@@ -1,15 +1,18 @@
+$stdout.sync = true
 require 'adsb_exchange'
 require 'celluloid/current'
+require 'celluloid/zmq'
 require "reel"
 require 'json'
 require 'msgpack'
 
 class AdsbServer
-  include Celluloid
-  include Celluloid::Notifications
+  include Celluloid::ZMQ
   finalizer :cleanup
 
-  def initialize
+  def initialize subscribe: "ipc:///tmp/adsb_updates", publish: "inproc://adsb_updates"
+    @subscribe_url = subscribe
+    @publish_url = publish
     async.run
   end
   def cleanup
@@ -18,23 +21,26 @@ class AdsbServer
     @pub.close
   end
   def run
-    @sub = CZTop::Socket::SUB.new("ipc:///tmp/adsb_updates")
-    @pub = CZTop::Socket::PUB.new("inproc://adsb_updates")
+    @sub = Socket::Sub.new
+    @sub.connect @subscribe_url
     @sub.subscribe('')
+    @pub = Socket::Pub.new
+    @pub.bind @publish_url
+
     puts "Subscribed to adsb_updates"
     while true
-      msg = @sub.receive
-      @pub << msg[0] unless msg.empty?
+      msg = @sub.read
+      @pub << msg unless msg.empty?
     end
   end
 end
 class AdsbClient
-  include Celluloid
-  include Celluloid::Notifications
+  include Celluloid::ZMQ
   finalizer :cleanup
 
-  def initialize(websocket)
+  def initialize(websocket, subscribe: 'inproc://adsb_updates')
     @socket = websocket
+    @subscribe_url = subscribe
     async.run
     puts "Forwarding messages to websocket"
   end
@@ -45,11 +51,12 @@ class AdsbClient
   end
 
   def run
-    @sub = CZTop::Socket::SUB.new("inproc://adsb_updates")
+    @sub = Socket::Sub.new
+    @sub.connect @subscribe_url
     @sub.subscribe('')
     while true
-      msg = @sub.receive
-      @socket << MessagePack.unpack(msg[0]).to_json unless msg.empty?
+      msg = @sub.read
+      @socket << MessagePack.unpack(msg).to_json unless msg.empty?
     end
   rescue Reel::SocketError
     puts "ADSB client disconnected"
@@ -57,9 +64,11 @@ class AdsbClient
   end
 end
 AdsbServer.supervise as: :adsb_server
-AdsbExchange::Live.supervise as: :adsb_source
+#AdsbExchange::Live.supervise as: :adsb_source
 
-Reel::Server::HTTP.run("0.0.0.0", 3000) do |connection|
+key = File.read(File.join(File.dirname(__FILE__), 'test.key'))
+cert = File.read(File.join(File.dirname(__FILE__), 'test.crt'))
+Reel::Server::HTTPS.run("0.0.0.0", 3000, cert: cert, key: key) do |connection|
   puts "Started AdsbExchange::Live"
   connection.each_request do |request|
     if request.websocket?

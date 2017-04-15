@@ -4,6 +4,10 @@ Welcome to your new gem! In this directory, you'll find the files you need to be
 
 TODO: Delete this and the text above, and describe your gem
 
+```bash
+openssl req -newkey rsa:2048 -nodes -keyout example/test.key -x509 -days 365 -out example/test.crt
+```
+
 ## Installation
 
 Add this line to your application's Gemfile:

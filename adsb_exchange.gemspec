@@ -34,10 +34,8 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency "rspec", "~> 3.0"
   spec.add_development_dependency "pry"
   spec.add_development_dependency "reel"
-  spec.add_dependency "faraday"
-  spec.add_dependency "faraday_middleware"
   spec.add_dependency "yajl-ruby"
-  spec.add_dependency "cztop"
   spec.add_dependency 'http'
   spec.add_dependency "msgpack"
+  spec.add_dependency 'celluloid-zmq'
 end
