@@ -11,9 +11,10 @@ module AdsbExchange
       args[:params] = opts unless opts.empty? 
       args[:form] = {icaos: icaos.join("-")} if icaos
       response = args.empty? ? HTTP.post(@url) : HTTP.post(@url, args)
-      parsed = response.parse
-      @ldv = parsed['lastDv']
-      return parsed
+      Parser.parse(response.body) do |body|
+        @ldv = body[:lastDv]
+        return body
+      end
     end
   end
 end

@@ -1,14 +1,3 @@
-require 'msgpack'
-require 'celluloid/current'
-require 'celluloid/io'
-require 'celluloid/zmq'
-Celluloid::ZMQ.init
-
-class BigDecimal
-  def to_msgpack packer
-    packer.write(to_f)
-  end
-end
 module AdsbExchange
   class Live
     include Celluloid::IO
@@ -37,11 +26,10 @@ module AdsbExchange
 
       Parser.parse(@stream) do |msg|
         now = Time.now.to_i*1000
-        selected = msg['acList'].select do |update|
-          update['PosTime'] = now
+        selected = msg[:acList].select do |update|
+          update[:PosTime] = now
           update.length > 1
         end
-        puts selected.count
         @publish << selected.to_msgpack
       end
     end

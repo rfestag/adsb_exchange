@@ -2,7 +2,7 @@ require 'oj'
 module AdsbExchange
   class Parser < ::Oj::ScHandler
     def self.parse io
-      Oj.sc_parse(new, io) do |msg|
+      Oj.sc_parse(new, io, symbol_keys: true) do |msg|
         yield msg
       end
     end
