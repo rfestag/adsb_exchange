@@ -10,6 +10,11 @@ openssl req -newkey rsa:2048 -nodes -keyout example/test.key -x509 -days 365 -ou
 #http://www.virtualradarserver.co.uk/Files/FlightNumberCoverage.csv
 #http://www.virtualradarserver.co.uk/Files/StandingData.sqb.gz
 #http://registry.faa.gov/database/ReleasableAircraft.zip
+
+echo 1 > /proc/sys/vm/overcommit_memory
+
+#/etc/redis.conf
+notify-keyspace-events Ex
 ```
 
 ## Installation

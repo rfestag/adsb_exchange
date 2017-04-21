@@ -1,10 +1,13 @@
 $stdout.sync = true
 require 'adsb_exchange'
 require 'celluloid/current'
+require 'celluloid/redis'
 require 'celluloid/zmq'
 require "reel"
 require 'json'
 require 'msgpack'
+require 'redis'
+require 'seconds'
 
 class AdsbServer
   include Celluloid::ZMQ
@@ -19,6 +22,7 @@ class AdsbServer
     puts "Restarting Server"
     @sub.close
     @pub.close
+    @redis.close
   end
   def run
     @sub = Socket::Sub.new
@@ -38,9 +42,11 @@ class AdsbClient
   include Celluloid::ZMQ
   finalizer :cleanup
 
-  def initialize(websocket, subscribe: 'inproc://adsb_updates')
+  def initialize(websocket, subscribe: 'inproc://adsb_updates', **redis_opts)
     @socket = websocket
     @subscribe_url = subscribe
+    opts = {driver: :celluloid}.merge! redis_opts
+    @redis = ::Redis.new opts
     async.run
     puts "Forwarding messages to websocket"
   end
@@ -48,20 +54,54 @@ class AdsbClient
   def cleanup
     puts "Cleaning up websocket"
     @sub.close
+    @redis.close
   end
 
   def run
     @sub = Socket::Sub.new
     @sub.connect @subscribe_url
     @sub.subscribe('')
+    puts "Sending last 10 points per track"
+    scan do |msg|
+      @socket << msg.to_json unless msg.empty?
+    end
+    puts "Sending updates"
+
     while true
       msg = @sub.read
       @socket << MessagePack.unpack(msg).to_json unless msg.empty?
-      #@socket << msg
     end
   rescue Reel::SocketError
     puts "ADSB client disconnected"
     terminate
+  end
+  private
+  def scan cursor='0', **opts, &block
+    opts[:count] ||= 1000
+    cursor, keys = @redis.scan(cursor, opts)
+    futures = []
+    start = 2.minutes.ago.utc.to_i*1000
+    stop = Time.now.utc.to_i*1000
+    pipeline = @redis.pipelined do
+      keys.each do |k|
+        #futures << [k, @redis.zrangebyscore(k, start, stop)]
+        futures << [k, @redis.zrange(k, 0, 0), @redis.zrange(k, -10, -1)]
+      end
+    end
+    values = futures.reduce([]) do |results, (k, init, points)|
+      init = MessagePack.unpack(init.value.first)
+      points = points.value
+      init[:points] = []
+      summary = points.reduce(init) do |summary, p|
+        p = MessagePack.unpack(p)
+        summary[:points] << p
+        summary.merge! p
+      end
+      results << summary unless points.empty?
+      results
+    end
+    block.call values
+    scan cursor, opts, &block if cursor != '0'
   end
 end
 AdsbServer.supervise as: :adsb_server

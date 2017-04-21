@@ -1,6 +1,7 @@
 $stdout.sync = true
 require 'adsb_exchange'
 require 'celluloid/current'
+require 'celluloid/redis'
 require 'celluloid/zmq'
 require 'msgpack'
 require 'sequel'
@@ -15,7 +16,7 @@ class AdsbSaver
     @base_station = Sequel.connect("sqlite://#{base_station_sqb}")
     @standing_data = Sequel.connect("sqlite://#{standing_data_sqb}")
     opts = {driver: :celluloid}.merge! redis_opts
-    @redis = Redis.new opts
+    @redis = ::Redis.new opts
     @aircraft = @base_station[:Aircraft]
     @types = @standing_data[:AircraftTypeNoEnumsView]
     @code_blocks = @standing_data[:CodeBlockView].reverse.order(:SignificantBitMask).to_a

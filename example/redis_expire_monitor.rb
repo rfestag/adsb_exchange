@@ -2,6 +2,7 @@ $stdout.sync = true
 require 'adsb_exchange'
 require 'celluloid/current'
 require 'celluloid/zmq'
+require 'celluloid/redis'
 require 'msgpack'
 require 'sequel'
 require 'redis'
@@ -15,13 +16,11 @@ class RedisExpireMonitor
   def initialize database: 0, **redis_opts
     opts = {driver: :celluloid, timeout: 0}.merge! redis_opts
     @database = database
-    @redis = Redis.new opts
+    @redis = ::Redis.new opts
     async.run
   end
   def cleanup
     puts "Restarting Redis Expire Monitor"
-    @sub.close
-    redis.conf
     @redis.psubscribe "__keyevent@#{@database}__:expired"
     @redis.close
   end
