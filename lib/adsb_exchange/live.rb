@@ -2,35 +2,42 @@ module AdsbExchange
   class Live
     include Celluloid::IO
     include Celluloid::ZMQ
+    include SocketFactory
+
+    OUTPUT = {type: Socket::Push,
+              endpoint: 'ipc:///tmp/adsb_stream',
+              bind: true}.freeze
+    IGNORE = [:Icao, :Sig].freeze
 
     finalizer :stop
     attr_accessor :running
 
-    def initialize host: 'pub-vrs.adsbexchange.com', port: 32010, publish: 'ipc:///tmp/adsb_updates'
+    def initialize host: 'pub-vrs.adsbexchange.com', port: 32010, output: {}
+      @outconf = OUTPUT.merge output
       @host = host
       @port = port
-      @endpoint = publish
       async.run
     end
     def stop
       @running = false
-      @stream.close if @stream
-      @publish.close if @publish
+      @stream.close if @stream rescue nil
+      @output.close if @output rescue nil
     end
     def run
       return if @running
       @running = true
       @stream = TCPSocket.new(@host, @port)
-      @publish = Socket::Pub.new
-      @publish.bind(@endpoint)
+      @output = create_socket @outconf
 
       Parser.parse(@stream) do |msg|
         now = Time.now.to_i*1000
-        selected = msg[:acList].select do |update|
+        messages = msg[:acList]
+        messages.reject! do |update|
+          diff = update.keys - IGNORE
           update[:PosTime] = now
-          update.length > 1
+          diff.empty?
         end
-        @publish << selected.to_msgpack
+        @output << messages.to_msgpack unless messages.empty?
       end
     end
   end

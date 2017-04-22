@@ -15,6 +15,8 @@ echo 1 > /proc/sys/vm/overcommit_memory
 
 #/etc/redis.conf
 notify-keyspace-events Ex
+
+top -p `pgrep -d ',' "ruby|redis"`
 ```
 
 ## Installation
@@ -35,9 +37,16 @@ Or install it yourself as:
 
 ## Usage
 
-TODO: Write usage instructions here
+                                        REDIS <------------------|
+                                          ^                      | All Points
+bcast              WORKER 1               |Points                |
+STREAM ---PUSH---> WORKER 2 ---PUSH---> CACHE ---PUBLISH---> WEBSOCKET
+                   WORKER N               ^bcast                 | 
+                                          |                      |
+                                          ------------------------              
+                                               Pull Summaries  
 
-## Development
+## Development                 
 
 After checking out the repo, run `bin/setup` to install dependencies. Then, run `rake spec` to run the tests. You can also run `bin/console` for an interactive prompt that will allow you to experiment.
 

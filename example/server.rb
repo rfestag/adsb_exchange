@@ -22,7 +22,6 @@ class AdsbServer
     puts "Restarting Server"
     @sub.close
     @pub.close
-    @redis.close
   end
   def run
     @sub = Socket::Sub.new
@@ -61,8 +60,8 @@ class AdsbClient
     @sub = Socket::Sub.new
     @sub.connect @subscribe_url
     @sub.subscribe('')
-    puts "Sending last 10 points per track"
-    scan do |msg|
+    puts "Sending summaries"
+    scan match: 'summary.*' do |msg|
       @socket << msg.to_json unless msg.empty?
     end
     puts "Sending updates"
@@ -85,21 +84,10 @@ class AdsbClient
     pipeline = @redis.pipelined do
       keys.each do |k|
         #futures << [k, @redis.zrangebyscore(k, start, stop)]
-        futures << [k, @redis.zrange(k, 0, 0), @redis.zrange(k, -10, -1)]
+        futures << [k, @redis.hgetall(k)]
       end
     end
-    values = futures.reduce([]) do |results, (k, init, points)|
-      init = MessagePack.unpack(init.value.first)
-      points = points.value
-      init[:points] = []
-      summary = points.reduce(init) do |summary, p|
-        p = MessagePack.unpack(p)
-        summary[:points] << p
-        summary.merge! p
-      end
-      results << summary unless points.empty?
-      results
-    end
+    values = futures.map{|k,f| f.value}
     block.call values
     scan cursor, opts, &block if cursor != '0'
   end
