@@ -1,10 +1,8 @@
 $stdout.sync = true
 require 'adsb_exchange'
 require 'celluloid/current'
-#require 'celluloid/redis'
 require 'celluloid/zmq'
 require 'hiredis'
-require 'msgpack'
 require 'sequel'
 require 'redis'
 require 'seconds'
@@ -12,29 +10,23 @@ require 'set'
 require 'ruby-prof'
 require 'oj'
 
-class AdsbWorker
+class AdsbWorker < AdsbExchange::Live
   include Celluloid::ZMQ
   include AdsbExchange::SocketFactory
 
-  MAX_POINTS = 100
   BASE_STATION_SQB = File.join(File.dirname(__FILE__), 'BaseStation.sqb').freeze
   STANDING_DATA_SQB = File.join(File.dirname(__FILE__), 'StandingData.sqb').freeze
-  MONGOID_YML = File.join(File.dirname(__FILE__), 'mongoid.yml').freeze
-  INPUT = {type: Socket::Pull,
-           endpoint: 'ipc:///tmp/adsb_stream',
-           bind: false}.freeze
-  OUTPUT = {type: Socket::Push,
-           endpoint: 'ipc:///tmp/adsb_cache',
-           bind: false}.freeze
+  OUTPUT = {type: Socket::Pub,
+            endpoint: 'ipc:///tmp/adsb_updates',
+            bind: true}.freeze
 
   finalizer :cleanup
 
-  def initialize input: {}, output: {}, base_station_sqb: BASE_STATION_SQB, standing_data_sqb: STANDING_DATA_SQB, mongoid: MONGOID_YML, mongoid_env: :production, **redis_opts
-    #Mongoid.load! MONGOID_YML, mongoid_env 
+  def initialize adsb_host: 'pub-vrs.adsbexchange.com', adsb_port: 32010, output: {}, base_station_sqb: BASE_STATION_SQB, standing_data_sqb: STANDING_DATA_SQB, **redis_opts
+    super(host: adsb_host, port: adsb_port)
     @base_station = Sequel.connect("sqlite://#{base_station_sqb}")
     @standing_data = Sequel.connect("sqlite://#{standing_data_sqb}")
-    @inconf = INPUT.merge input
-    @outconf = OUTPUT.merge output
+    @output = create_socket(OUTPUT.merge output)
     opts = {driver: :hiredis}.merge! redis_opts
     @redis = ::Redis.new opts
     @aircraft = @base_station[:Aircraft]
@@ -56,17 +48,17 @@ class AdsbWorker
     end
   end
   def cleanup
-    puts "Restarting Worker Subsystem"
-    @input.close
-    @output.close
-    @redis.close
+    puts "Cleaning up"
+    @stream.close if @stream 
+    @output.close if @output
+    @redis.close if @redis
   end
-  def process events
+  def update events
+    start = Time.now
     futures = []
-    outputs = []
     update_fields = Set.new
     @redis.multi do
-      outputs  = events.reduce([]) do |outputs, e|
+      events.each do |e|
         #If we don't, initialize with enrichment
         @cache[e[:Icao]] ||= [{}, []]
         current, track = @cache[e[:Icao]]
@@ -91,7 +83,6 @@ class AdsbWorker
           end
           current.delete_if {|k,v| v.nil?}
           e = current
-          outputs.push current
         else
           current.merge! e
         end
@@ -99,35 +90,10 @@ class AdsbWorker
         @redis.set "info.#{e[:Icao]}", Oj.to_json(current)
         @redis.zadd "update.#{e[:Icao]}", e[:PosTime].to_i, Oj.to_json(e)
         @redis.expire "update.#{e[:Icao]}", 60
-        outputs
       end
     end
-    outputs
-  end
-  def run
-    @input = create_socket @inconf
-    @output = create_socket @outconf
-
-    puts "Subscribed to adsb_updates"
-    while true
-      #RubyProf.start
-      msg = @input.read
-      start = Time.now
-      outputs = process Oj.load(msg, symbol_keys: true)
-      @output << msg
-      #@output << outputs.to_msgpack unless outputs.empty?
-      puts Time.now-start
-      #result = RubyProf.stop
-      #printer = RubyProf::FlatPrinter.new(result)
-      #printer.print(STDOUT)
-    end
-  end
-  private
-  def area a,b,c
-    ax,ay = a
-    bx,by = b
-    cx,cy = c
-    (ax*by + bx*cy + cx*ay - ax*cy - bx*ay - cx*by).abs
+    @output << Oj.to_json(events)
+    puts Time.now - start
   end
 end
 AdsbWorker.supervise as: :adsb_worker

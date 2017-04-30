@@ -3,33 +3,20 @@ module AdsbExchange
   class Live
     include Celluloid
     include Celluloid::IO
-    include Celluloid::ZMQ
-    include SocketFactory
 
-    OUTPUT = {type: Socket::Push,
-              endpoint: 'ipc:///tmp/adsb_stream',
-              bind: true}.freeze
     IGNORE = [:Icao, :Sig].freeze
 
-    finalizer :stop
-    attr_accessor :running
+    finalizer :cleanup
 
-    def initialize host: 'pub-vrs.adsbexchange.com', port: 32010, output: {}
-      @outconf = OUTPUT.merge output
+    def initialize host: 'pub-vrs.adsbexchange.com', port: 32010
       @host = host
       @port = port
-      async.run
     end
     def stop
-      @running = false
       @stream.close if @stream rescue nil
-      @output.close if @output rescue nil
     end
     def run
-      return if @running
-      @running = true
       @stream = TCPSocket.new(@host, @port)
-      @output = create_socket @outconf
 
       Parser.parse(@stream) do |msg|
         now = Time.now.to_i
@@ -39,8 +26,11 @@ module AdsbExchange
           update[:PosTime] = now
           diff.empty?
         end
-        @output << Oj.to_json(messages) unless messages.empty?
+        update messages unless messages.empty?
       end
+    end
+    def update
+      #Override this method
     end
   end
 end
