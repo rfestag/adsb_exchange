@@ -1,7 +1,9 @@
 $stdout.sync = true
+require 'ruby-prof'
 require 'adsb_exchange'
 require 'celluloid/current'
-require 'celluloid/redis'
+#require 'celluloid/redis'
+require 'hiredis'
 require 'celluloid/zmq'
 require "reel"
 require 'json'
@@ -41,10 +43,13 @@ class AdsbClient
   include Celluloid::ZMQ
   finalizer :cleanup
 
-  def initialize(websocket, subscribe: 'inproc://adsb_updates', **redis_opts)
+  #def initialize(websocket, subscribe: 'inproc://adsb_updates', **redis_opts)
+  def initialize websocket, subscribe: "ipc:///tmp/adsb_updates", **redis_opts
     @socket = websocket
     @subscribe_url = subscribe
-    opts = {driver: :celluloid}.merge! redis_opts
+    #opts = {driver: :celluloid}.merge! redis_opts
+    opts = {driver: :hiredis}.merge! redis_opts
+    #opts = redis_opts
     @redis = ::Redis.new opts
     async.run
     puts "Forwarding messages to websocket"
@@ -54,6 +59,7 @@ class AdsbClient
     puts "Cleaning up websocket"
     @sub.close
     @redis.close
+    @socket.close
   end
 
   def run
@@ -61,14 +67,16 @@ class AdsbClient
     @sub.connect @subscribe_url
     @sub.subscribe('')
     puts "Sending summaries"
-    scan match: 'summary.*' do |msg|
-      @socket << msg.to_json unless msg.empty?
+    scan match: 'info.*' do |msg|
+      @socket << msg unless msg.empty?
+      #@socket << msg.to_json unless msg.empty?
     end
     puts "Sending updates"
 
     while true
       msg = @sub.read
-      @socket << MessagePack.unpack(msg).to_json unless msg.empty?
+      #@socket << MessagePack.unpack(msg).to_json unless msg.empty?
+      @socket << msg
     end
   rescue Reel::SocketError
     puts "ADSB client disconnected"
@@ -76,23 +84,34 @@ class AdsbClient
   end
   private
   def scan cursor='0', **opts, &block
-    opts[:count] ||= 1000
+    opts[:count] ||= 10000
     cursor, keys = @redis.scan(cursor, opts)
     futures = []
-    start = 2.minutes.ago.utc.to_i*1000
-    stop = Time.now.utc.to_i*1000
     pipeline = @redis.pipelined do
       keys.each do |k|
-        #futures << [k, @redis.zrangebyscore(k, start, stop)]
-        futures << [k, @redis.hgetall(k)]
+        futures << @redis.get(k)
       end
     end
-    values = futures.map{|k,f| f.value}
+    #values = futures.map(&:value)
+    #block.call values.join
+    values = "[#{futures.map{|v| v.value}.join(',')}]"
     block.call values
     scan cursor, opts, &block if cursor != '0'
   end
+  def scan_range cursor='0', keys: nil, start: 1.minute.ago.to_i, stop: Time.now.to_i, **opts, &block
+    opts[:count] ||= 1000
+    cursor, keys = @redis.scan(cursor, opts) unless keys
+    futures = []
+    pipeline = @redis.pipelined do
+      keys.each do |k|
+        futures << [k, @redis.zrangebyscore(k, start, stop)]
+      end
+    end
+    values = futures.map{|k,p|f.value.join}
+    block.call values.join
+  end
 end
-AdsbServer.supervise as: :adsb_server
+#AdsbServer.supervise as: :adsb_server
 
 key = File.read(File.join(File.dirname(__FILE__), 'test.key'))
 cert = File.read(File.join(File.dirname(__FILE__), 'test.crt'))

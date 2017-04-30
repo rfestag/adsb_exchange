@@ -1,5 +1,7 @@
+require 'oj'
 module AdsbExchange
   class Live
+    include Celluloid
     include Celluloid::IO
     include Celluloid::ZMQ
     include SocketFactory
@@ -30,14 +32,14 @@ module AdsbExchange
       @output = create_socket @outconf
 
       Parser.parse(@stream) do |msg|
-        now = Time.now.to_i*1000
+        now = Time.now.to_i
         messages = msg[:acList]
         messages.reject! do |update|
           diff = update.keys - IGNORE
           update[:PosTime] = now
           diff.empty?
         end
-        @output << messages.to_msgpack unless messages.empty?
+        @output << Oj.to_json(messages) unless messages.empty?
       end
     end
   end

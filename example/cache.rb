@@ -41,12 +41,14 @@ class AdsbCache
       #Step 1: Simply forward. We do this to simplify connection between subscribers
       msg = @input.read
       @output << msg
+=begin
       events = MessagePack.unpack(msg)
       events.each do |e|
         summary = (@cache[e[:Icao]] || {}).merge! e
         #TODO: Simplify up to N points. Make available upon request
         @cache[e[:Icao]] = summary
       end
+=end
     end
   end
 end

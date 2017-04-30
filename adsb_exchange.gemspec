@@ -34,10 +34,13 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency "rspec", "~> 3.0"
   spec.add_development_dependency "pry"
   spec.add_development_dependency "reel"
+  spec.add_development_dependency "ruby-prof"
+  spec.add_development_dependency "activesupport"
   spec.add_dependency 'http'
   spec.add_dependency "msgpack"
   spec.add_dependency 'celluloid-zmq'
   spec.add_dependency 'celluloid-redis'
+  spec.add_dependency 'hiredis'
   spec.add_dependency 'oj'
   spec.add_dependency 'redis'
   spec.add_dependency 'sequel'
