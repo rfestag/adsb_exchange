@@ -33,19 +33,30 @@ class AdsbWorker < AdsbExchange::Live
     @types = @standing_data[:AircraftTypeNoEnumsView]
     @code_blocks = @standing_data[:CodeBlockView].reverse.order(:SignificantBitMask).to_a
     @cache = {}
-    async.run
+    puts "Syncing with redis"
+    scan match: "info.*" do |events|
+      events.reduce(@cache) do |cache, e|
+        cache[e[:Icao]] = e
+        cache
+      end
+    end
+    puts "Done: #{@cache.size}"
     every(30) do
+      puts "Doing cleanup"
       @redis.pipelined do
         @cache.delete_if do |k,(current, track)| 
           rem = current[:PosTime] < 30.seconds.ago.to_i
           if rem
+            puts "Deleting #{current[:Icao]}"
             @redis.del "info.#{current[:Icao]}"
             @redis.del "update.#{current[:Icao]}"
           end
           rem
         end
+        puts "Tracking #{@cache.size} aircraft"
       end
     end
+    async.run
   end
   def cleanup
     puts "Cleaning up"
@@ -53,6 +64,19 @@ class AdsbWorker < AdsbExchange::Live
     @output.close if @output
     @redis.close if @redis
   end
+  def scan cursor='0', **opts, &block
+    opts[:count] ||= 10000
+    cursor, keys = @redis.scan(cursor, opts)
+    futures = []
+    pipeline = @redis.pipelined do
+      keys.each do |k|
+        futures << @redis.get(k)
+      end
+    end
+    block.call(futures.map{|v| Oj.load(v.value, symbol_keys: true)})
+    scan cursor, opts, &block if cursor != '0'
+  end
+
   def update events
     start = Time.now
     futures = []
@@ -88,12 +112,12 @@ class AdsbWorker < AdsbExchange::Live
         end
 
         @redis.set "info.#{e[:Icao]}", Oj.to_json(current)
+        @redis.expire "info.#{e[:Icao]}", 60
         @redis.zadd "update.#{e[:Icao]}", e[:PosTime].to_i, Oj.to_json(e)
         @redis.expire "update.#{e[:Icao]}", 60
       end
     end
     @output << Oj.to_json(events)
-    puts Time.now - start
   end
 end
 AdsbWorker.supervise as: :adsb_worker

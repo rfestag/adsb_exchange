@@ -36,6 +36,7 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency "reel"
   spec.add_development_dependency "ruby-prof"
   spec.add_development_dependency "activesupport"
+  spec.add_development_dependency "foreman"
   spec.add_dependency 'http'
   spec.add_dependency "msgpack"
   spec.add_dependency 'celluloid-zmq'

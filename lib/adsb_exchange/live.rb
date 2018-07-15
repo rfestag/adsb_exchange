@@ -8,7 +8,7 @@ module AdsbExchange
 
     finalizer :cleanup
 
-    def initialize host: 'pub-vrs.adsbexchange.com', port: 32010
+    def initialize host: 'pub-vrs.adsbexchange.com', port: 32015
       @host = host
       @port = port
     end
@@ -16,7 +16,9 @@ module AdsbExchange
       @stream.close if @stream rescue nil
     end
     def run
+      puts "Connecting..."
       @stream = TCPSocket.new(@host, @port)
+      puts "Connected"
 
       Parser.parse(@stream) do |msg|
         now = Time.now.to_i
